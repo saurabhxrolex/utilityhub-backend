@@ -2,12 +2,16 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
+from collections import defaultdict
+
 app = Flask(__name__)
 CORS(app)
 
 API_KEY = os.getenv("GROQ_API_KEY")
-
 URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# Chat history
+chat_history = defaultdict(list)
 
 @app.route("/")
 def home():
@@ -16,25 +20,41 @@ def home():
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
+
     message = data.get("message", "")
+    user_id = data.get("user_id", "default")
+
+    history = chat_history[user_id]
+
+    history.append({
+        "role": "user",
+        "content": message
+    })
+
+    if len(history) > 10:
+        history = history[-10:]
+        chat_history[user_id] = history
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are UtilityHub AI. "
+                "Reply in the same language as the user. "
+                "Be accurate, friendly, detailed and remember previous messages "
+                "from this conversation."
+            )
+        }
+    ] + history
+
     body = {
         "model": "llama-3.3-70b-versatile",
-        "messages": [
-    {
-        "role": "system",
-        "content": "You are UtilityHub AI. Reply in the same language as the user. Be helpful, accurate, and detailed."
-    },
-    {
-        "role": "user",
-        "content": message
-    }
-]
+        "messages": messages
     }
 
     try:
@@ -44,7 +64,15 @@ def chat():
             return jsonify({"reply": r.text})
 
         result = r.json()
+
         reply = result["choices"][0]["message"]["content"]
+
+        history.append({
+            "role": "assistant",
+            "content": reply
+        })
+
+        chat_history[user_id] = history
 
         return jsonify({"reply": reply})
 
