@@ -14,9 +14,11 @@ CORS(app)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 SERPER_URL = "https://google.serper.dev/search"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+
 chat_history = defaultdict(list)
 
 # ==========================
@@ -42,12 +44,14 @@ Always reply:
 
 2. Reply in the same language as the user.
 
-3. Remember previous conversation.
+3. Remember previous messages from the current conversation.
 
-4. If web search results are provided,
-always use them first before your own knowledge.
+4. If web search or YouTube results are provided,
+use them before your own knowledge.
 
-5. Be accurate, friendly and detailed.
+5. Never invent a latest video, date, news item, price, score, or link.
+
+6. Be accurate, friendly, and helpful.
 """
 
 # ==========================
@@ -58,12 +62,12 @@ always use them first before your own knowledge.
 def home():
     return "UtilityHub Backend Running!"
 
+
 # ==========================
 # WEB SEARCH
 # ==========================
 
 def search_web(query):
-
     if not SERPER_API_KEY:
         return ""
 
@@ -77,43 +81,41 @@ def search_web(query):
     }
 
     try:
-
-        r = requests.post(
+        response = requests.post(
             SERPER_URL,
             headers=headers,
             json=body,
             timeout=20
         )
 
-        if r.status_code != 200:
+        if response.status_code != 200:
             return ""
 
-        data = r.json()
-
+        data = response.json()
         results = []
 
-        if "organic" in data:
-            for item in data["organic"][:5]:
-                results.append(
-                    f"{item.get('title','')}\n"
-                    f"{item.get('snippet','')}\n"
-                    f"{item.get('link','')}\n"
-                )
+        for item in data.get("organic", [])[:5]:
+            title = item.get("title", "")
+            snippet = item.get("snippet", "")
+            link = item.get("link", "")
+
+            results.append(
+                f"Title: {title}\n"
+                f"Snippet: {snippet}\n"
+                f"Link: {link}"
+            )
 
         return "\n\n".join(results)
 
-    except Exception:
+    except requests.RequestException:
         return ""
-# ==========================
-except Exception:
-    return ""
+
 
 # ==========================
-# YOUTUBE LATEST VIDEO SEARCH
+# YOUTUBE SEARCH
 # ==========================
 
-def search_latest_youtube_video(channel_name):
-
+def search_latest_youtube_video(search_query):
     if not YOUTUBE_API_KEY:
         return {
             "success": False,
@@ -122,10 +124,10 @@ def search_latest_youtube_video(channel_name):
 
     params = {
         "part": "snippet",
-        "q": channel_name,
+        "q": search_query,
         "type": "video",
         "order": "date",
-        "maxResults": 5,
+        "maxResults": 10,
         "key": YOUTUBE_API_KEY
     }
 
@@ -139,9 +141,14 @@ def search_latest_youtube_video(channel_name):
         data = response.json()
 
         if response.status_code != 200:
+            error_message = (
+                data.get("error", {})
+                .get("message", "YouTube API request failed.")
+            )
+
             return {
                 "success": False,
-                "error": data
+                "error": error_message
             }
 
         items = data.get("items", [])
@@ -152,20 +159,16 @@ def search_latest_youtube_video(channel_name):
                 "error": "No YouTube video found."
             }
 
-        channel_words = channel_name.lower().split()
         selected_video = items[0]
 
-        for item in items:
-            result_channel = item["snippet"].get(
-                "channelTitle", ""
-            ).lower()
+        video_id = selected_video.get("id", {}).get("videoId", "")
+        snippet = selected_video.get("snippet", {})
 
-            if all(word in result_channel for word in channel_words):
-                selected_video = item
-                break
-
-        video_id = selected_video["id"]["videoId"]
-        snippet = selected_video["snippet"]
+        if not video_id:
+            return {
+                "success": False,
+                "error": "Video ID was not found."
+            }
 
         return {
             "success": True,
@@ -173,10 +176,14 @@ def search_latest_youtube_video(channel_name):
             "channel": snippet.get("channelTitle", ""),
             "published_at": snippet.get("publishedAt", ""),
             "description": snippet.get("description", ""),
-            "thumbnail": snippet.get(
-                "thumbnails", {}
-            ).get("high", {}).get("url", ""),
-            "video_url": f"https://www.youtube.com/watch?v={video_id}"
+            "thumbnail": (
+                snippet.get("thumbnails", {})
+                .get("high", {})
+                .get("url", "")
+            ),
+            "video_url": (
+                f"https://www.youtube.com/watch?v={video_id}"
+            )
         }
 
     except requests.RequestException as error:
@@ -184,21 +191,26 @@ def search_latest_youtube_video(channel_name):
             "success": False,
             "error": str(error)
         }
-
-
 # ==========================
-# CHAT
-# ==========================
-# CHAT
+# CHAT API
 # ==========================
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    data = request.get_json(silent=True) or {}
 
-    data = request.get_json()
-
-    message = data.get("message", "")
+    message = data.get("message", "").strip()
     user_id = data.get("user_id", "default")
+
+    if not message:
+        return jsonify({
+            "reply": "Please enter a message."
+        }), 400
+
+    if not GROQ_API_KEY:
+        return jsonify({
+            "reply": "Groq API key is missing."
+        }), 500
 
     history = chat_history[user_id]
 
@@ -207,11 +219,28 @@ def chat():
         "content": message
     })
 
-    if len(history) > 10:
-        history = history[-10:]
+    if len(history) > 12:
+        history = history[-12:]
         chat_history[user_id] = history
 
-    latest_keywords = [
+    message_lower = message.lower()
+
+    youtube_keywords = [
+        "youtube",
+        "latest video",
+        "latest upload",
+        "today video",
+        "today's video",
+        "video title",
+        "video link",
+        "aaj ka video",
+        "aaj ki video",
+        "लेटेस्ट वीडियो",
+        "आज का वीडियो",
+        "आज की वीडियो"
+    ]
+
+    web_keywords = [
         "latest",
         "today",
         "current",
@@ -225,28 +254,34 @@ def chat():
         "aaj",
         "abhi",
         "taaza",
-        "youtube",
-        "video",
-        "upload"
+        "आज",
+        "अभी",
+        "ताज़ा"
     ]
 
+    youtube_context = ""
     web_context = ""
-youtube_context = ""
 
-if "youtube" in message.lower() or "video" in message.lower():
-    yt = search_latest_youtube_video(message)
+    if any(word in message_lower for word in youtube_keywords):
+        youtube_result = search_latest_youtube_video(message)
 
-    if yt["success"]:
-        youtube_context = f"""
-Latest YouTube Video
+        if youtube_result.get("success"):
+            youtube_context = (
+                "Verified latest YouTube result:\n"
+                f"Title: {youtube_result.get('title', '')}\n"
+                f"Channel: {youtube_result.get('channel', '')}\n"
+                f"Published: {youtube_result.get('published_at', '')}\n"
+                f"Description: {youtube_result.get('description', '')}\n"
+                f"Video link: {youtube_result.get('video_url', '')}\n"
+                f"Thumbnail: {youtube_result.get('thumbnail', '')}"
+            )
+        else:
+            youtube_context = (
+                "YouTube search failed: "
+                + str(youtube_result.get("error", "Unknown error"))
+            )
 
-Title: {yt['title']}
-Channel: {yt['channel']}
-Published: {yt['published_at']}
-Description: {yt['description']}
-Video: {yt['video_url']}
-"""
-    if any(word in message.lower() for word in latest_keywords):
+    elif any(word in message_lower for word in web_keywords):
         web_context = search_web(message)
 
     messages = [
@@ -258,17 +293,21 @@ Video: {yt['video_url']}
 
     messages.extend(history)
 
-        if web_context:
-        messages.append({
-            "role": "system",
-            "content": "Latest Search Results:\n\n" + web_context
-        })
-
     if youtube_context:
         messages.append({
             "role": "system",
             "content": youtube_context
         })
+
+    if web_context:
+        messages.append({
+            "role": "system",
+            "content": (
+                "Verified web search results:\n\n"
+                + web_context
+            )
+        })
+
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -277,31 +316,37 @@ Video: {yt['video_url']}
     body = {
         "model": "llama-3.3-70b-versatile",
         "messages": messages,
-        "temperature": 0.7
+        "temperature": 0.4
     }
 
     try:
-
-        r = requests.post(
+        response = requests.post(
             GROQ_URL,
             headers=headers,
             json=body,
             timeout=30
         )
 
-        if r.status_code != 200:
+        if response.status_code != 200:
             return jsonify({
-                "reply": r.text
-            })
+                "reply": response.text
+            }), response.status_code
 
-        result = r.json()
+        result = response.json()
 
-        reply = result["choices"][0]["message"]["content"]
+        reply = (
+            result.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "No reply received.")
+        )
 
         history.append({
             "role": "assistant",
             "content": reply
         })
+
+        if len(history) > 12:
+            history = history[-12:]
 
         chat_history[user_id] = history
 
@@ -309,19 +354,24 @@ Video: {yt['video_url']}
             "reply": reply
         })
 
-    except Exception as e:
+    except requests.RequestException as error:
         return jsonify({
-            "reply": str(e)
-        })
+            "reply": f"Network error: {str(error)}"
+        }), 500
+
+    except Exception as error:
+        return jsonify({
+            "reply": f"Server error: {str(error)}"
+        }), 500
+
+
 # ==========================
-# HISTORY
+# CHAT HISTORY
 # ==========================
 
 @app.route("/history", methods=["POST"])
 def history():
-
-    data = request.get_json()
-
+    data = request.get_json(silent=True) or {}
     user_id = data.get("user_id", "default")
 
     return jsonify(chat_history[user_id])
@@ -333,9 +383,7 @@ def history():
 
 @app.route("/clear", methods=["POST"])
 def clear_chat():
-
-    data = request.get_json()
-
+    data = request.get_json(silent=True) or {}
     user_id = data.get("user_id", "default")
 
     chat_history[user_id] = []
@@ -352,15 +400,15 @@ def clear_chat():
 
 @app.route("/health", methods=["GET"])
 def health():
-
     return jsonify({
         "status": "online",
         "ai": "UtilityHub AI",
         "developer": "Saurabh",
         "owner": "Saurabh",
         "memory": True,
+        "groq": bool(GROQ_API_KEY),
         "internet_search": bool(SERPER_API_KEY),
-        "groq": bool(GROQ_API_KEY)
+        "youtube_search": bool(YOUTUBE_API_KEY)
     })
 
 
