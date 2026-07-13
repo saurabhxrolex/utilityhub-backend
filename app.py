@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+            "reply": replyfrom flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
@@ -186,13 +186,13 @@ def chat():
         chat_history[user_id] = history
 
         return jsonify({
-            "reply": reply
-        })
 
-    except Exception as e:
-    return jsonify({
-        "reply": str(e)
-    })
+        })
+            except Exception as e:
+        return jsonify({
+            "reply": str(e)
+        })
+        })
 
 @app.route("/history", methods=["POST"])
 def history():
