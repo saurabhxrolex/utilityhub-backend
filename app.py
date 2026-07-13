@@ -190,10 +190,11 @@ def chat():
         })
 
     except Exception as e:
-        return jsonify({
-            "reply": str(e)
-        })
-        @app.route("/history", methods=["POST"])
+    return jsonify({
+        "reply": str(e)
+    })
+
+@app.route("/history", methods=["POST"])
 def history():
     data = request.get_json()
 
