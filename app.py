@@ -26,11 +26,15 @@ def chat():
     body = {
         "model": "llama-3.3-70b-versatile",
         "messages": [
-            {
-                "role": "user",
-                "content": message
-            }
-        ]
+    {
+        "role": "system",
+        "content": "You are UtilityHub AI. Reply in the same language as the user. Be helpful, accurate, and detailed."
+    },
+    {
+        "role": "user",
+        "content": message
+    }
+]
     }
 
     try:
