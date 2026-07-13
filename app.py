@@ -13,10 +13,10 @@ CORS(app)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 SERPER_URL = "https://google.serper.dev/search"
-
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 chat_history = defaultdict(list)
 
 # ==========================
@@ -105,6 +105,90 @@ def search_web(query):
     except Exception:
         return ""
 # ==========================
+except Exception:
+    return ""
+
+# ==========================
+# YOUTUBE LATEST VIDEO SEARCH
+# ==========================
+
+def search_latest_youtube_video(channel_name):
+
+    if not YOUTUBE_API_KEY:
+        return {
+            "success": False,
+            "error": "YouTube API key is missing."
+        }
+
+    params = {
+        "part": "snippet",
+        "q": channel_name,
+        "type": "video",
+        "order": "date",
+        "maxResults": 5,
+        "key": YOUTUBE_API_KEY
+    }
+
+    try:
+        response = requests.get(
+            YOUTUBE_SEARCH_URL,
+            params=params,
+            timeout=20
+        )
+
+        data = response.json()
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "error": data
+            }
+
+        items = data.get("items", [])
+
+        if not items:
+            return {
+                "success": False,
+                "error": "No YouTube video found."
+            }
+
+        channel_words = channel_name.lower().split()
+        selected_video = items[0]
+
+        for item in items:
+            result_channel = item["snippet"].get(
+                "channelTitle", ""
+            ).lower()
+
+            if all(word in result_channel for word in channel_words):
+                selected_video = item
+                break
+
+        video_id = selected_video["id"]["videoId"]
+        snippet = selected_video["snippet"]
+
+        return {
+            "success": True,
+            "title": snippet.get("title", ""),
+            "channel": snippet.get("channelTitle", ""),
+            "published_at": snippet.get("publishedAt", ""),
+            "description": snippet.get("description", ""),
+            "thumbnail": snippet.get(
+                "thumbnails", {}
+            ).get("high", {}).get("url", ""),
+            "video_url": f"https://www.youtube.com/watch?v={video_id}"
+        }
+
+    except requests.RequestException as error:
+        return {
+            "success": False,
+            "error": str(error)
+        }
+
+
+# ==========================
+# CHAT
+# ==========================
 # CHAT
 # ==========================
 
@@ -147,7 +231,21 @@ def chat():
     ]
 
     web_context = ""
+youtube_context = ""
 
+if "youtube" in message.lower() or "video" in message.lower():
+    yt = search_latest_youtube_video(message)
+
+    if yt["success"]:
+        youtube_context = f"""
+Latest YouTube Video
+
+Title: {yt['title']}
+Channel: {yt['channel']}
+Published: {yt['published_at']}
+Description: {yt['description']}
+Video: {yt['video_url']}
+"""
     if any(word in message.lower() for word in latest_keywords):
         web_context = search_web(message)
 
@@ -160,12 +258,17 @@ def chat():
 
     messages.extend(history)
 
-    if web_context:
+        if web_context:
         messages.append({
             "role": "system",
             "content": "Latest Search Results:\n\n" + web_context
         })
 
+    if youtube_context:
+        messages.append({
+            "role": "system",
+            "content": youtube_context
+        })
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
