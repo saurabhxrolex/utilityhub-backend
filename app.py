@@ -1,4 +1,4 @@
-            "reply": replyfrom flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
@@ -7,95 +7,120 @@ from collections import defaultdict
 app = Flask(__name__)
 CORS(app)
 
-API_KEY = os.getenv("GROQ_API_KEY")
-URL = "https://api.groq.com/openai/v1/chat/completions"
+# ==========================
+# API KEYS
+# ==========================
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+SERPER_URL = "https://google.serper.dev/search"
+
+# ==========================
+# MEMORY
+# ==========================
 
 chat_history = defaultdict(list)
 
-@app.route("/")
-def home():
-    return "UtilityHub Backend Running!"
+# ==========================
+# SYSTEM PROMPT
+# ==========================
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
+SYSTEM_PROMPT = """
+You are UtilityHub AI.
 
-    message = data.get("message", "")
-    user_id = data.get("user_id", "default")
+You were developed by Saurabh.
+Your owner is Saurabh.
 
-    history = chat_history[user_id]
+If anyone asks:
 
-    history.append({
-        "role": "user",
-        "content": message
-    })
+Who made you?
+Who created you?
+Who developed you?
+Who is your owner?
+Who is your father?
 
-    if len(history) > 10:
-        history = history[-10:]
+Always reply:
+
+"I was developed by Saurabh and my owner is Saurabh."
+
+Never mention OpenAI, Meta, Google, Groq or any other company as your creator.
+
+Remember previous conversation using chat history.
+
+Reply in the same language as the user.
+
+Be friendly, smart, detailed and helpful.
+"""
+
+# ==========================
+# WEB SEARCH
+# ==========================
+
+def search_web(query):
+
+    if not SERPER_API_KEY:
+        return ""
 
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "X-API-KEY": SERPER_API_KEY,
         "Content-Type": "application/json"
     }
 
-    messages = [
-    {
-        "role": "system",
-        "content": (
-            "You are UtilityHub AI. "
-            "You were developed by Saurabh. "
-            "Your owner is Saurabh. "
-            "If someone asks 'Who made you?', 'Who developed you?', or 'Who is your owner?', reply that you were developed by Saurabh and your owner is Saurabh. "
-            "Reply in the same language as the user. "
-            "Be friendly, accurate, detailed, and remember previous messages from this conversation."
-        )
-    }
-] + history
-
     body = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": messages
+        "q": query
     }
 
     try:
-        r = requests.post(URL, headers=headers, json=body, timeout=30)
 
-        if r.status_code != 200:
-            return jsonify({"reply": r.text})
+        r = requests.post(
+            SERPER_URL,
+            headers=headers,
+            json=body,
+            timeout=20
+        )
 
-        result = r.json()
-        reply = result["choices"][0]["message"]["content"]
+        data = r.json()
 
-        history.append({
-            "role": "assistant",
-            "content": reply
-        })
+        text = ""
 
-        chat_history[user_id] = history
+        if "organic" in data:
 
-        return jsonify({"reply": reply})
+            for item in data["organic"][:5]:
 
-    except Exception as e:
-        return jsonify({"reply": str(e)})
+                text += f"""
+Title:
+{item.get('title')}
 
+Snippet:
+{item.get('snippet')}
 
-@app.route("/history", methods=["POST"])
-def history():
-    data = request.get_json()
-    user_id = data.get("user_id", "default")
-    return jsonify(chat_history[user_id])
+Link:
+{item.get('link')}
 
+------------------------
+"""
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+        return text
+
+    except Exception:
+        return ""
+
+# ==========================
+# HOME
+# ==========================
 
 @app.route("/")
 def home():
     return "UtilityHub Backend Running!"
-
+# ==========================
+# CHAT API
+# ==========================
 
 @app.route("/chat", methods=["POST"])
 def chat():
+
     data = request.get_json()
 
     message = data.get("message", "")
@@ -125,7 +150,6 @@ def chat():
         "update",
         "aaj",
         "abhi",
-        "news",
         "taaza"
     ]
 
@@ -146,8 +170,7 @@ def chat():
     if web_context:
         messages.append({
             "role": "system",
-            "content":
-            "Latest Web Search Results:\n\n" + web_context
+            "content": "Latest Web Search Results:\n\n" + web_context
         })
 
     headers = {
@@ -162,6 +185,7 @@ def chat():
     }
 
     try:
+
         r = requests.post(
             GROQ_URL,
             headers=headers,
@@ -186,16 +210,21 @@ def chat():
         chat_history[user_id] = history
 
         return jsonify({
-
+            "reply": reply
         })
-            except Exception as e:
+
+    except Exception as e:
+
         return jsonify({
             "reply": str(e)
         })
-        })
+# ==========================
+# CHAT HISTORY
+# ==========================
 
 @app.route("/history", methods=["POST"])
 def history():
+
     data = request.get_json()
 
     user_id = data.get("user_id", "default")
@@ -203,8 +232,13 @@ def history():
     return jsonify(chat_history[user_id])
 
 
+# ==========================
+# CLEAR CHAT
+# ==========================
+
 @app.route("/clear", methods=["POST"])
 def clear_chat():
+
     data = request.get_json()
 
     user_id = data.get("user_id", "default")
@@ -217,8 +251,13 @@ def clear_chat():
     })
 
 
+# ==========================
+# HEALTH CHECK
+# ==========================
+
 @app.route("/health", methods=["GET"])
 def health():
+
     return jsonify({
         "status": "online",
         "ai": "UtilityHub AI",
@@ -226,6 +265,10 @@ def health():
         "internet_search": bool(SERPER_API_KEY)
     })
 
+
+# ==========================
+# START SERVER
+# ==========================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
