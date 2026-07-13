@@ -17,10 +17,6 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 SERPER_URL = "https://google.serper.dev/search"
 
-# ==========================
-# MEMORY
-# ==========================
-
 chat_history = defaultdict(list)
 
 # ==========================
@@ -30,29 +26,37 @@ chat_history = defaultdict(list)
 SYSTEM_PROMPT = """
 You are UtilityHub AI.
 
-You were developed by Saurabh.
-Your owner is Saurabh.
+Developer: Saurabh
+Owner: Saurabh
 
-If anyone asks:
+Rules:
 
-Who made you?
-Who created you?
-Who developed you?
-Who is your owner?
-Who is your father?
+1. If someone asks:
+- Who made you?
+- Who developed you?
+- Who created you?
+- Who is your owner?
 
 Always reply:
-
 "I was developed by Saurabh and my owner is Saurabh."
 
-Never mention OpenAI, Meta, Google, Groq or any other company as your creator.
+2. Reply in the same language as the user.
 
-Remember previous conversation using chat history.
+3. Remember previous conversation.
 
-Reply in the same language as the user.
+4. If web search results are provided,
+always use them first before your own knowledge.
 
-Be friendly, smart, detailed and helpful.
+5. Be accurate, friendly and detailed.
 """
+
+# ==========================
+# HOME
+# ==========================
+
+@app.route("/")
+def home():
+    return "UtilityHub Backend Running!"
 
 # ==========================
 # WEB SEARCH
@@ -81,41 +85,27 @@ def search_web(query):
             timeout=20
         )
 
+        if r.status_code != 200:
+            return ""
+
         data = r.json()
 
-        text = ""
+        results = []
 
         if "organic" in data:
-
             for item in data["organic"][:5]:
+                results.append(
+                    f"{item.get('title','')}\n"
+                    f"{item.get('snippet','')}\n"
+                    f"{item.get('link','')}\n"
+                )
 
-                text += f"""
-Title:
-{item.get('title')}
-
-Snippet:
-{item.get('snippet')}
-
-Link:
-{item.get('link')}
-
-------------------------
-"""
-
-        return text
+        return "\n\n".join(results)
 
     except Exception:
         return ""
-
 # ==========================
-# HOME
-# ==========================
-
-@app.route("/")
-def home():
-    return "UtilityHub Backend Running!"
-# ==========================
-# CHAT API
+# CHAT
 # ==========================
 
 @app.route("/chat", methods=["POST"])
@@ -150,7 +140,10 @@ def chat():
         "update",
         "aaj",
         "abhi",
-        "taaza"
+        "taaza",
+        "youtube",
+        "video",
+        "upload"
     ]
 
     web_context = ""
@@ -170,7 +163,7 @@ def chat():
     if web_context:
         messages.append({
             "role": "system",
-            "content": "Latest Web Search Results:\n\n" + web_context
+            "content": "Latest Search Results:\n\n" + web_context
         })
 
     headers = {
@@ -214,12 +207,11 @@ def chat():
         })
 
     except Exception as e:
-
         return jsonify({
             "reply": str(e)
         })
 # ==========================
-# CHAT HISTORY
+# HISTORY
 # ==========================
 
 @app.route("/history", methods=["POST"])
@@ -261,8 +253,11 @@ def health():
     return jsonify({
         "status": "online",
         "ai": "UtilityHub AI",
+        "developer": "Saurabh",
+        "owner": "Saurabh",
         "memory": True,
-        "internet_search": bool(SERPER_API_KEY)
+        "internet_search": bool(SERPER_API_KEY),
+        "groq": bool(GROQ_API_KEY)
     })
 
 
