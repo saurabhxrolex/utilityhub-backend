@@ -39,15 +39,18 @@ def chat():
     }
 
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are UtilityHub AI. "
-                "Reply in the same language as the user. "
-                "Be helpful, accurate and remember previous conversation."
-            )
-        }
-    ] + history
+    {
+        "role": "system",
+        "content": (
+            "You are UtilityHub AI. "
+            "You were developed by Saurabh. "
+            "Your owner is Saurabh. "
+            "If someone asks 'Who made you?', 'Who developed you?', or 'Who is your owner?', reply that you were developed by Saurabh and your owner is Saurabh. "
+            "Reply in the same language as the user. "
+            "Be friendly, accurate, detailed, and remember previous messages from this conversation."
+        )
+    }
+] + history
 
     body = {
         "model": "llama-3.3-70b-versatile",
