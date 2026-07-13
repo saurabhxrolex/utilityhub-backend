@@ -262,16 +262,16 @@ def chat():
     youtube_context = ""
     web_context = ""
 
-    if any(word in message_lower for word in youtube_keywords):
+if any(word in message_lower for word in youtube_keywords):
     youtube_result = search_latest_youtube_video(message)
 
     if youtube_result.get("success"):
         reply = (
-            "📺 Latest YouTube Video\n\n"
-            f"Title: {youtube_result.get('title', '')}\n"
-            f"Channel: {youtube_result.get('channel', '')}\n"
-            f"Published: {youtube_result.get('published_at', '')}\n"
-            f"Video Link: {youtube_result.get('video_url', '')}"
+            f"📺 Latest YouTube Video\n\n"
+            f"Title: {youtube_result.get('title','')}\n"
+            f"Channel: {youtube_result.get('channel','')}\n"
+            f"Published: {youtube_result.get('published_at','')}\n"
+            f"Video Link: {youtube_result.get('video_url','')}"
         )
 
         history.append({
@@ -286,15 +286,12 @@ def chat():
         })
 
     return jsonify({
-        "reply": (
-            "YouTube search failed: "
-            + str(youtube_result.get("error", "Unknown error"))
-        )
+        "reply": "YouTube search failed: " +
+                 str(youtube_result.get("error", "Unknown error"))
     }), 500
 
-    elif any(word in message_lower for word in web_keywords):
-        web_context = search_web(message)
-
+elif any(word in message_lower for word in web_keywords):
+    web_context = search_web(message)
     messages = [
         {
             "role": "system",
