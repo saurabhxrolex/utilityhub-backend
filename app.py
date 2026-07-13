@@ -10,7 +10,6 @@ CORS(app)
 API_KEY = os.getenv("GROQ_API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Chat history
 chat_history = defaultdict(list)
 
 @app.route("/")
@@ -33,7 +32,6 @@ def chat():
 
     if len(history) > 10:
         history = history[-10:]
-        chat_history[user_id] = history
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -46,8 +44,7 @@ def chat():
             "content": (
                 "You are UtilityHub AI. "
                 "Reply in the same language as the user. "
-                "Be accurate, friendly, detailed and remember previous messages "
-                "from this conversation."
+                "Be helpful, accurate and remember previous conversation."
             )
         }
     ] + history
@@ -64,7 +61,6 @@ def chat():
             return jsonify({"reply": r.text})
 
         result = r.json()
-
         reply = result["choices"][0]["message"]["content"]
 
         history.append({
@@ -78,6 +74,14 @@ def chat():
 
     except Exception as e:
         return jsonify({"reply": str(e)})
+
+
+@app.route("/history", methods=["POST"])
+def history():
+    data = request.get_json()
+    user_id = data.get("user_id", "default")
+    return jsonify(chat_history[user_id])
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
